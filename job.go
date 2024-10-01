@@ -5,27 +5,29 @@ import (
 	"time"
 )
 
-type Job[item any] struct {
+type Job[item, ctx any] struct {
 	maxmait time.Duration
-	commit  func([]item)
+	context ctx
+	commit  func(ctx, []item)
 	itemmu  sync.Mutex
 	items   []item
 	timer   *time.Timer
 }
 
-func NewJob[item any](
-	maxwait time.Duration, commit func([]item),
-) (*Job[item], error) {
+func NewJob[item, ctx any](
+	maxwait time.Duration, context ctx, commit func(ctx, []item),
+) (*Job[item, ctx], error) {
 	if maxwait <= time.Millisecond {
 		return nil, ErrWaitTimeTooShort
 	}
-	return &Job[item]{
+	return &Job[item, ctx]{
 		maxmait: maxwait,
+		context: context,
 		commit:  commit,
 	}, nil
 }
 
-func (jb *Job[item]) Add(it item) {
+func (jb *Job[item, ctx]) Add(it item) {
 	jb.itemmu.Lock()
 	defer jb.itemmu.Unlock()
 	if len(jb.items) == 0 {
@@ -34,7 +36,7 @@ func (jb *Job[item]) Add(it item) {
 	jb.items = append(jb.items, it)
 }
 
-func (jb *Job[item]) Commit() {
+func (jb *Job[item, ctx]) Commit() {
 	jb.itemmu.Lock()
 	if jb.timer != nil {
 		jb.timer.Stop()
@@ -48,10 +50,10 @@ func (jb *Job[item]) Commit() {
 	copy(itemscp, jb.items)
 	jb.items = jb.items[:0]
 	jb.itemmu.Unlock()
-	jb.commit(itemscp)
+	jb.commit(jb.context, itemscp)
 }
 
-func (jb *Job[item]) collect() {
+func (jb *Job[item, ctx]) collect() {
 	jb.itemmu.Lock()
 	defer jb.itemmu.Unlock()
 	jb.timer = time.AfterFunc(jb.maxmait, jb.Commit)
